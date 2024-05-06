@@ -13,11 +13,11 @@ class SettingDialog : public QDialog
 
 public:
     explicit SettingDialog(QWidget *parent = nullptr);
-    void setValue(int gap, int dist);
+    void setValue(int gap, int dist, int anitime, int maxsize);
     ~SettingDialog();
 
 signals:
-    void apply(int gap, int distance);
+    void apply(int gap, int distance, int anitime, int maxsize);
 
 private:
     Ui::SettingDialog *ui;
