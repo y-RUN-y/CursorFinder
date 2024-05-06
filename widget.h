@@ -31,6 +31,7 @@ public:
     void readIni(void);
     bool isCursorHide(void);
     bool isForeFullScreen(void);
+    int checkCursorPath(void);  //检测用户是否设置有效的光标图片路径
     HWND topWinFromPoint(const QPoint& pos);
 
 signals:
@@ -39,20 +40,21 @@ signals:
 
 private:
     Ui::Widget* ui;
-
     QPixmap cursorPix;
-
     const QString iniPath = QApplication::applicationDirPath() + "/settings.ini";
     const QString Reg_AutoRun = "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"; //HKEY_CURRENT_USER仅仅对当前用户有效，但不需要管理员权限
     const QString AppName = "CursorFinder";
     const QString AppPath = QDir::toNativeSeparators(QApplication::applicationFilePath());
     QSystemTrayIcon* sysTray = nullptr;
 
+    QString CursorImgPath = "";
     int Gap = 120; //ms
     int Dist = 150; //px
-
+    int MaxSize = 128; //px
+    int AnimationTime = 200; //ms
     bool isStopWhileFullScreen = true;
 
+    QSettings* iniSet;
     // QWidget interface
 protected:
     void paintEvent(QPaintEvent* event) override;

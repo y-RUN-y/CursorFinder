@@ -11,14 +11,19 @@ SettingDialog::SettingDialog(QWidget *parent) :
 
     connect(ui->buttonBox, &QDialogButtonBox::clicked, [=](QAbstractButton* button) {
         if (button->text() == "Apply")
-            emit apply(ui->spin_gap->value(), ui->spin_dist->value());
+            emit apply(ui->spin_gap->value(),
+                       ui->spin_dist->value(),
+                       ui->spin_anitime->value(),
+                       ui->spin_maxsize->value());
     });
 }
 
-void SettingDialog::setValue(int gap, int dist)
+void SettingDialog::setValue(int gap, int dist, int anitime, int maxsize)
 {
     ui->spin_gap->setValue(gap);
     ui->spin_dist->setValue(dist);
+    ui->spin_anitime->setValue(anitime);
+    ui->spin_maxsize->setValue(maxsize);
 }
 
 SettingDialog::~SettingDialog()

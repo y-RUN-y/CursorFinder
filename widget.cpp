@@ -11,6 +11,7 @@
 #include <QMenu>
 #include <QAction>
 #include <QScreen>
+#include <QFileDialog>
 //1.直接设置图标-动画会鬼畜 故改方案
 //2.不按下左键时检测检测鼠标移动要用setMouseTraching(true)但此时检测频率较低 卡顿；而按住左键moveEvent就没有这个问题
 //但由于不可实施，改为QTimer跟随
@@ -25,6 +26,7 @@ Widget::Widget(QWidget* parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
 {
+    iniSet = new QSettings(iniPath, QSettings::IniFormat);
     ui->setupUi(this);
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool); //Qt::Tool弹出时不会抢占焦点
     setAttribute(Qt::WA_TranslucentBackground);
@@ -33,7 +35,16 @@ Widget::Widget(QWidget* parent)
     setCursor(Qt::BlankCursor); //BlankCursor也算isCursorVisible，只有ShowCursor(false);isCursorHide()才是true
     setGeometry(qApp->screens().at(0)->geometry() - QMargins(0, 0, 0, 1)); //不能showFullScreen()，否则会自动隐藏任务栏
 
-    cursorPix = QPixmap(":/images/cursor.png");
+    //检测是否自定义光标图像
+    switch (checkCursorPath()) {
+    case -1:
+        sysTray->showMessage("错误", "读取光标文件错误，使用默认光标");
+    case 0:
+        cursorPix = QPixmap(":/images/cursor.png");
+        break;
+    case 1:
+        cursorPix = QPixmap(CursorImgPath);
+    }
 
     QGraphicsOpacityEffect* labelOpacity = new QGraphicsOpacityEffect(ui->label);
     labelOpacity->setOpacity(0);
@@ -45,11 +56,11 @@ Widget::Widget(QWidget* parent)
         ui->label->move(QCursor::pos());
     });
 
-    QTimeLine* TL_scale = new QTimeLine(100, this);
+    QTimeLine* TL_scale = new QTimeLine(AnimationTime, this);
     TL_scale->setUpdateInterval(10);
     connect(TL_scale, &QTimeLine::valueChanged, [=](qreal value) {
-        int width = 30 + value * 80;
-        labelOpacity->setOpacity(value);
+        int width = 32 + value * (MaxSize-32);
+        labelOpacity->setOpacity(1);
         QPixmap pix = cursorPix.scaledToWidth(width);
         //qDebug() << pix.size() << value;
         setCursorPix(pix);
@@ -159,50 +170,66 @@ void Widget::setCursorPix(const QPixmap& pix)
 void Widget::initSysTray()
 {
     if (sysTray) return;
-    sysTray = new QSystemTrayIcon(QIcon(":/images/ICON.ico"), this);
+    sysTray = new QSystemTrayIcon(QIcon(":/images/icon.ico"), this);
     sysTray->setToolTip("CursorFinder");
 
     QMenu* menu = new QMenu(); //如果设this为parent 则第一次show时 会卡顿，此处故意内存泄漏
-    menu->setStyleSheet("QMenu{background-color:rgb(15,15,15);color:rgb(220,220,220);}"
-                        "QMenu:selected{background-color:rgb(60,60,60);}");
 
     QAction* act_fullScreen = new QAction("全屏时禁用", menu);
-    QAction* act_autoStart = new QAction("AutoStart", menu);
-    QAction* act_setting = new QAction("Settings", menu);
-    QAction* act_quit = new QAction("Quit>>", menu);
+    QAction* act_autoStart = new QAction("自启动", menu);
+    QAction* act_setting = new QAction("设置", menu);
+    QAction* act_setCursorImgPath = new QAction("修改光标图片", menu);
+    QAction* act_resetCursorImgPath = new QAction("重置光标图片", menu);
+    QAction* act_quit = new QAction("退出", menu);
     act_fullScreen->setCheckable(true);
     act_fullScreen->setChecked(isStopWhileFullScreen);
     connect(act_fullScreen, &QAction::toggled, [=](bool checked) {
         isStopWhileFullScreen = checked;
-        sysTray->showMessage("Tip", checked ? "已开启[全屏时禁用]" : "已关闭[全屏时禁用]");
-        writeIni();
+        sysTray->showMessage("CursorFinder", checked ? "已开启[全屏时禁用]" : "已关闭[全屏时禁用]");
+        iniSet->setValue("DetectFullScreen", isStopWhileFullScreen);
     });
     act_autoStart->setCheckable(true);
     act_autoStart->setChecked(isAutoRun());
     connect(act_autoStart, &QAction::toggled, [=](bool checked) {
         setAutoRun(checked);
-        sysTray->showMessage("Tip", checked ? "已添加启动项" : "已移除启动项");
+        sysTray->showMessage("CursorFinder", checked ? "已添加启动项" : "已移除启动项");
     });
     connect(act_setting, &QAction::triggered, [=]() {
         SettingDialog dia(this);
-        dia.setValue(Gap, Dist);
-        connect(&dia, &SettingDialog::apply, [=](int gap, int distance) {
-            qDebug() << gap << distance;
+        dia.setValue(Gap, Dist, AnimationTime, MaxSize);
+        connect(&dia, &SettingDialog::apply, [=](int gap, int distance, int anitime, int maxsize) {
+            qDebug() << gap << distance << anitime << maxsize;
             Gap = gap;
             Dist = distance;
-            writeIni(); //其实在Setting Widget里直接存比较好 设置过多的话 不好传出
+            AnimationTime = anitime;
+            MaxSize = maxsize;
+            writeIni();
         });
         dia.exec();
+    });
+    connect(act_setCursorImgPath, &QAction::triggered, [=](){
+        CursorImgPath = QFileDialog::getOpenFileName(NULL, "请选择文件",".","*png");
+        if(CursorImgPath != ""){
+            cursorPix = QPixmap(CursorImgPath);
+            iniSet->setValue("CursorImgPath",CursorImgPath);
+        }
+    });
+    connect(act_resetCursorImgPath, &QAction::triggered, [=](){
+        CursorImgPath = "";
+        cursorPix = QPixmap(":images/cursor.png");
+        iniSet->setValue("CursorImgPath",CursorImgPath);
     });
     connect(act_quit, &QAction::triggered, qApp, &QApplication::quit);
 
     menu->addAction(act_fullScreen);
     menu->addAction(act_autoStart);
     menu->addAction(act_setting);
+    menu->addAction(act_setCursorImgPath);
+    menu->addAction(act_resetCursorImgPath);
     menu->addAction(act_quit);
     sysTray->setContextMenu(menu);
     sysTray->show();
-    sysTray->showMessage("Tip", "CursorFinder has Started\n[Shake to Enlarge Cursor]");
+    sysTray->showMessage("CursorFinder", "CursorFinder已启动");
 }
 
 void Widget::setAutoRun(bool isAuto) //如果想区分是（开机启动|手动启动）可以加上启动参数 用来判别
@@ -223,19 +250,21 @@ bool Widget::isAutoRun()
 void Widget::writeIni()
 {
     qDebug() << "#writeIni";
-    QSettings iniSet(iniPath, QSettings::IniFormat);
-    iniSet.setValue("GapTime", Gap);
-    iniSet.setValue("Distance", Dist);
-    iniSet.setValue("DetectFullScreen", isStopWhileFullScreen);
+    iniSet->setValue("GapTime", Gap);
+    iniSet->setValue("Distance", Dist);
+    iniSet->setValue("AnimationTime", AnimationTime);
+    iniSet->setValue("MaxSize",MaxSize);
 }
 
 void Widget::readIni()
 {
     qDebug() << "#readIni";
-    QSettings iniSet(iniPath, QSettings::IniFormat);
-    Gap = iniSet.value("GapTime", Gap).toInt();
-    Dist = iniSet.value("Distance", Dist).toInt();
-    isStopWhileFullScreen = iniSet.value("DetectFullScreen", isStopWhileFullScreen).toBool();
+    Gap = iniSet->value("GapTime", Gap).toInt();
+    Dist = iniSet->value("Distance", Dist).toInt();
+    isStopWhileFullScreen = iniSet->value("DetectFullScreen", isStopWhileFullScreen).toBool();
+    AnimationTime = iniSet->value("AnimationTime", AnimationTime).toInt();
+    MaxSize = iniSet->value("MaxSize", MaxSize).toInt();
+    CursorImgPath = iniSet->value("CursorImgPath", CursorImgPath).toString();
 }
 
 bool Widget::isCursorHide()
@@ -259,6 +288,13 @@ bool Widget::isForeFullScreen()
     if (Rect.right - Rect.left >= Screen.width() && Rect.bottom - Rect.top >= Screen.height()) //确保窗口大小(二重验证)
         return true;
     return false;
+}
+
+int Widget::checkCursorPath(){
+    if(CursorImgPath == "") return 0;
+    QFileInfo in(CursorImgPath);
+    if(in.isFile()) return 1;
+    return -1;
 }
 
 HWND Widget::topWinFromPoint(const QPoint& pos)
